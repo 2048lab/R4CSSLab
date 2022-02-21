@@ -1,0 +1,28 @@
+---
+title: "Learning MLR"
+author: "Jilung Hsieh"
+date: "2019/6/19"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidytext)
+options(stringsAsFactors = F)
+```
+
+
+```{r}
+# install.packages("mlr")
+library(mlr)
+data(BreastCancer, package = "mlbench")
+df = BreastCancer
+df$Id = NULL
+classif.task = makeClassifTask(id = "BreastCancer", data = df, target = "Class")
+classif.task
+```
+
+

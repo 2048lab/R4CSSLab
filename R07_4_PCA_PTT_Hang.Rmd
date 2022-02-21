@@ -1,0 +1,94 @@
+---
+title: "R07_4_PCA_PTT"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+options(stringsAsFactors = F)
+```
+
+
+
+```{r}
+load("../../R4CSSData/HatePolitics_Hang_20190101_2019_06_01.rda")
+names(comments)
+names(posts)
+```
+
+
+```{r}
+
+comments <- comments %>% 
+    left_join(posts %>% select(plink, ptitle, ptime), by="plink")
+comments %>% head(20) %>% View
+```
+
+```{r}
+c2p <- comments %>%
+    filter(tag == "噓 ") %>%
+    group_by(plink) %>%
+    filter(n() > 5) %>%
+    ungroup() %>%
+    group_by(commentor) %>%
+    filter(n() > 5) %>%
+    filter(n() < 30) %>%
+    ungroup() %>%
+    count(commentor, plink) %>%
+    spread(plink, n, fill = 0)
+```
+
+```{r}
+c2p.pca <- prcomp(c2p[-1], center = T, scale. = T)
+```
+
+```{r}
+plot(c2p.pca, type = "l")
+# c2p.pca$x %>% as_tibble() %>% select(PC1, PC2, PC3, PC4) %>% head()
+```
+```{r}
+c2p.pca$x %>%
+	as_tibble() %>%
+	ggplot(aes(PC1)) + geom_density()
+
+
+c2p.pca$x %>%
+	as_tibble() %>%
+	ggplot(aes(PC2)) + geom_density()
+
+c2p.pca$x %>% # data projected in pca space
+	as_tibble() %>%
+	ggplot(aes(PC1, PC2)) + 
+    geom_jitter(alpha = 0.5)
+    scale_x_log10() + scale_y_log10()
+    scale_x_reverse() + scale_y_reverse()
+
+```
+
+```{r}
+merged <- c2p.pca$x %>% as_tibble() %>% select(PC1, PC2, PC3, PC4) %>% 
+    bind_cols(c2p %>% select(1)) 
+
+
+merged %>%
+    slice_max(order_by = PC1, n=10) %>%
+    left_join(comments %>% filter(tag == "噓 " & str_detect(ccontent, "韓")), by = "commentor") %>%
+    group_by(commentor) %>%
+    summarize(merged_comment = str_c(ccontent, collapse = "／\n")) %>%
+    ungroup() %>% View
+
+merged %>%
+    slice_min(order_by = PC1, n=10) %>%
+    left_join(comments %>% filter(tag == "噓 " & str_detect(ccontent, "韓")), by = "commentor") %>% 
+    group_by(commentor) %>%
+    summarize(merged_comment = str_c(ccontent, collapse = "／\n")) %>%
+    ungroup() %>% View
+
+
+?slice_max
+```
+

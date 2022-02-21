@@ -1,0 +1,136 @@
+---
+title: "R04_3_tw_area_map"
+author: "Jilung Hsieh"
+date: "2019/4/17"
+output: html_document
+---
+
+* https://rfrd-tw.github.io/
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+options(stringsAsFactors = F)
+```
+
+
+# read by dplyr
+```{r}
+raw <- read.csv("twdata/opendata107Y030.csv") %>%
+    slice(-1) %>%
+    mutate(vname  = paste0(site_id, village)) %>%
+    select(statistic_yyy, vname, everything())
+
+tidy_data <- raw %>%
+    gather("key", "value", 6:ncol(.)) %>% 
+    mutate(key = str_replace(key, "15down", "0_14")) %>%
+    mutate(key = str_replace(key, "100up", "100_105")) %>%
+    mutate(key = str_replace(key, "single_age", "single")) %>%
+    separate(key, c("married", "ageLower", "ageUpper", "gender")) %>% 
+    mutate(ageLower = as.numeric(ageLower),
+           ageUpper = as.numeric(ageUpper),
+           value = as.numeric(value)
+           ) %>%
+    arrange(vname)
+
+?str_replace
+?separate
+```
+
+
+# Stat by villages
+```{r}
+village_stat <- tidy_data %>%
+    filter(ageLower >= 20) %>%
+    group_by(district_code) %>%
+    summarise(
+        people = sum(value),
+        elderSum = sum(value[ageLower >= 65]),
+        marriedSum = sum(value[!married %in% ("single")])
+        ) %>%
+    ungroup() %>%
+    mutate(elderPerc = elderSum / people,
+           marriedPerc = marriedSum / people)
+```
+
+
+## Merge original data fields
+```{r}
+village_stat <- village_stat %>%
+    left_join(raw %>% select(statistic_yyy, district_code, vname, site_id, village), 
+              by = "district_code")
+```
+
+
+## Plotting for testing
+```
+tidy_data %>%
+    filter(ageLower >= 20) %>%
+    count(ageRange)
+```
+
+# Stat by towns
+```{r}
+town_stat <- tidy_data %>%
+    filter(ageLower >= 20) %>%
+    group_by(site_id) %>%
+    summarise(
+        people = sum(value),
+        elderSum = sum(value[ageLower >= 65]),
+        marriedSum = sum(value[!married %in% ("single")])
+        ) %>%
+    ungroup() %>%
+    mutate(elderPerc = elderSum / people,
+           marriedPerc = marriedSum / people)
+
+```
+
+
+
+## Visualization
+```{r}
+town_stat %>%
+    ggplot() + 
+    aes(marriedPerc, elderPerc) + 
+    geom_jitter(alpha=0.5, color="blue")
+```
+
+# Median of grouped data
+* https://www.mathsisfun.com/data/frequency-grouped-mean-median-mode.html
+* https://stackoverflow.com/questions/18887382/how-to-calculate-the-median-on-grouped-dataset
+
+```{r}
+town_age <- tidy_data %>%
+    group_by(site_id, ageLower) %>%
+    summarize(value = sum(value)) %>%
+    ungroup() %>%
+    filter(ageLower >= 15) %>%
+    group_by(site_id) %>%
+    arrange(ageLower) %>%
+    mutate(cf = cumsum(value)) %>%
+    ungroup() %>%
+    arrange(site_id, ageLower)
+
+
+town_age_median <- town_age %>% 
+    group_by(site_id) %>%
+    summarize(L = ageLower[(cf - value) <= max(cf)/2 & cf >= max(cf)/2],
+              n = max(cf)
+              ) %>%
+    ungroup() %>%
+    left_join(town_age, by = c("site_id" = "site_id", "L" = "ageLower")) %>%
+    mutate(B = cf - value, G = value, w = 5) %>%
+    mutate(ageMedian = L + (n/2-B)/G*w)
+
+town_stat <- town_stat %>% left_join(town_age_median %>% select(site_id, ageMedian))
+```
+
+
+```{r}
+save(town_stat, file="twdata/town_stat.rda")
+```
+
+

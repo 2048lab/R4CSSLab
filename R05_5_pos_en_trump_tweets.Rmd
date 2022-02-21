@@ -1,0 +1,50 @@
+---
+title: "R05_5_pos_en_trump_tweets"
+author: "Jilung Hsieh"
+date: "2019/11/1"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Reference
+- https://m-clark.github.io/text-analysis-with-R/part-of-speech-tagging.html
+
+
+
+# Load and clean data
+
+```{r}
+install.packages("openNLPmodels.en", repos = "http://datacube.wu.ac.at/", type = "source")
+library(tidyverse)
+parts_of_speech %>% View
+options(stringsAsFactors = F)
+```
+
+# Loading data
+```{r}
+load(url("http://varianceexplained.org/files/trump_tweets_df.rda"))
+dim(trump_tweets_df)
+names(trump_tweets_df)
+```
+
+
+
+
+# Cleaning data
+- Extracting publishing device of tweets
+```{r}
+library(tidyr) # tidyr::extract()
+library(stringr) # stringr::str_replace
+trump_tweets_df$statusSource[1]
+tweets <- trump_tweets_df %>%
+    select(id, statusSource, text, created) %>%
+    # mutate(source = str_replace(statusSource, 
+    #                             ".*Twitter for (.*?)<.*", "\\1")) %>%
+    # mutate(source = str_extract(statusSource, 'Twitter for (.*?)<')) %>%
+    extract(statusSource, "source", "Twitter for (.*?)<") %>% View
+    filter(source %in% c("iPhone", "Android"))
+```
+

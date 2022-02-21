@@ -1,0 +1,89 @@
+---
+title: "ML2_abstract_classification"
+author: "Jilung Hsieh"
+date: "10/26/2019"
+output:
+  html_document:
+    highlight: zenburn
+    number_sections: yes
+    theme: cerulean
+    toc: yes
+    css: style.css
+editor_options:
+  chunk_output_type: inline
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Loading packages
+```{r}
+library(tidyverse)
+library(tidytext)
+options(stringsAsFactors = F)
+```
+
+# 02 knn by class
+```{r}
+library(class)
+start_time <- Sys.time()
+knn.pred <- knn(x[indices, ], x[-indices, ], y$sentence_type[indices], k = 20)
+dim(x[indices, ])
+Sys.time() - start_time
+```
+
+## 2.1 confidence matrix
+```{r}
+conf.mat <- table("Predictions" = knn.pred, Actual = y[-indices])
+conf.mat %>% as_tibble %>% spread(Actual, n)
+```
+
+
+## 2.2 Accuracy
+
+```{r}
+(accuracy <- sum(diag(conf.mat))/sum(conf.mat) * 100)
+```
+
+## 2.3 Summary
+- KNN for selecting stop words as features
+- [1] 15237   583
+- Time difference of 11.52473 mins
+- Accuracy: 40.1
+
+
+
+# 03 knn with PCA
+- KNN for selecting stop words as features, k=100
+- Reducing dimension by PCA
+- dim: 10666   583
+- Accuracy: 43.03
+
+
+- KNN for middle frequency words as features
+- Reducing dimension by PCA
+- dim: 10666   3262
+- Accuracy: 40.X
+
+## 3.1 PCA
+```{r}
+x[indices, ] %>% dim
+start_time <- Sys.time()
+x.pca <- prcomp(x[indices, ], center = TRUE, scale. = F)
+Sys.time() - start_time
+x.pca$x %>% dim
+plot(x.pca, type = "l")
+x.test.pca <- predict(x.pca, newdata = x[-indices,])
+```
+
+## 3.2 Predict by PCA
+```{r}
+library(class)
+knn.pred <- knn(x.pca$x[,1:50], x.test.pca[,1:50], y[indices], k = 50)
+conf.mat <- table("Predictions" = knn.pred, Actual = y[-indices])
+conf.mat %>% as_tibble %>% spread(Actual, n)
+(accuracy <- sum(diag(conf.mat))/sum(conf.mat) * 100)
+```
+
+

@@ -1,0 +1,55 @@
+---
+title: "AS07 Appledaily Charity"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Import packages
+
+```{r}
+library(tidyverse)
+library(rvest)
+options(stringsAsFactors = F)
+options(scipen = 999)
+```
+
+## Testing
+
+### Getting indexpage
+
+```{r}
+url.indexpage <- "https://tw.feature.appledaily.com/charity/projlist/3"
+tb.df <- read_html(url.indexpage) %>%
+    html_node("#charity table") %>%
+    html_table()
+colnames(tb.df) <- c('caseId', "title", "date", "status", "ammount", "donators")
+
+tb.df <- tb.df %>% slice(-1)
+
+tb.df$link <- read_html(url.indexpage) %>% 
+    html_nodes("#charity a.artcatdetails") %>%
+    html_attr("href")
+
+tb.df$caseId %>% unique() %>% length()
+```
+
+### Getting donator
+
+```{r}
+url.donator <- str_c('https://tw.feature.appledaily.com/charity/projdetail/', tb.df$caseId[1])
+url.donator
+
+temp.df <- read_html(url.donator) %>% html_node("#charity table:nth-child(2)") %>% html_table()
+
+
+```
+
+### Getting news
+
+```{r}
+content <- read_html(tb.df$link[1]) %>%
+    html_node("#articleBody") %>% html_text()
+```

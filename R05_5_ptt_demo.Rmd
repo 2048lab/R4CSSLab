@@ -1,0 +1,349 @@
+---
+title: "R05_5_ptt_demo"
+author: "Jilung Hsieh"
+date: "2019/6/3"
+output: 
+  html_document: 
+    number_sections: true
+    highlight: textmate
+    theme: spacelab
+    toc: yes
+editor_options: 
+  chunk_output_type: inline
+---
+# Story
+- https://disp.cc/b/163-aRmH
+- https://www.ianalyseur.org/user/LukeSkywaker/
+- https://www.ianalyseur.org/heatmap/CenaC/
+- https://www.ianalyseur.org/ip/60.251.182.146/
+
+
+
+```{r}
+library(tidyverse)
+library(stringr)
+library(tidytext)
+library(jiebaR)
+library(lubridate)
+options(stringsAsFactors = F)
+```
+
+
+# Loading ptt data
+```{r}
+load("../Crawler/gossiping_韓_201905311907.rda")
+tempc.df <- allc.df 
+tempp.df <- allp.df
+load("../Crawler/HatePolitics_韓_201906010320.rda")
+allc.df <- bind_rows(allc.df, tempc.df)
+allp.df <- bind_rows(allp.df, tempp.df)
+
+```
+
+
+# Loading jieba cutter
+```{r}
+segment_not <- c("韓國瑜")
+cutter <- worker()
+new_user_word(cutter, segment_not)
+source("../segment_not.R")
+stopWords <- readRDS("data/stopWords.rds")
+```
+
+
+# Data cleaning and reformatting
+- https://www.rdocumentation.org/packages/lubridate/versions/1.7.4/topics/parse_date_time
+
+```{r}
+# library(lubridate)
+# strptime("Fri Apr 12 20:25:52 2019", "%a %b %d %H:%M:%S %Y")
+# allp.df$ptime <- as.POSIXct(strptime(allp.df$ptime, "%a %b %d %H:%M:%S %Y", tz="Asia/Taipei"))
+# allp.df$poster_id <- str_replace(allp.df$poster, "(.+) \\(.*\\)", "\\1")
+```
+
+
+
+# Detect keywords
+```{r}
+allp.df %>%
+    mutate(word = purrr::map(pcontent, function(x)segment(x, cutter))) %>% 
+    unnest(word) %>%
+    select(word) %>% 
+    count(word) %>%
+    filter(str_detect(word, "韓")) %>% head(10)
+```
+
+
+```{r}
+post_clean_df <- allp.df %>%
+    # filter(str_detect(pcontent, "韓流|韓總|韓國瑜|韓粉|韓冰|韓兒|韓黑|黑韓|韓流|韓導|挺韓|拱韓|韓選|韓說|打韓|韓式|韓神|反韓|韓柯|柯韓|批韓|要韓|韓禿|卡韓|捧韓|酸韓|韓營|韓市")) %>%
+    filter(!str_detect(pcontent, "韓元|南韓|北韓|韓劇|韓文|日韓|韓國隊|兩韓|韓聯社|韓團|韓媒|韓國政府|台韓|大韓民國|美韓|韓國語|韓籍|駐韓|韓服|韓美|韓幣|韓版|韓美軍")) %>%
+    filter(!is.na(board)) %>% 
+    mutate(ptime = as.POSIXct(strptime(ptime, "%a %b %d %H:%M:%S %Y"))) %>%
+    filter(ptime > as.Date("2018-10-01")) %>%
+    # filter(ptime < as.Date("2018-11-01")) %>%
+    mutate(poster_id = str_replace(poster, "(.+) \\(.*\\)", "\\1")) %>%
+    filter(str_detect(ipaddr, "^\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}"))
+save(post_clean_df, file = "post_clean_df.rda")
+
+
+```
+
+## plotting distribution
+```{r}
+post_clean_df %>%
+    ggplot() + 
+    aes(ptime)  + 
+    geom_density()
+
+
+post_clean_df %>%
+    mutate(week = cut(ptime, breaks = "week")) %>%
+    count(week) %>%
+    ggplot() + aes(week, n)  + 
+    geom_col() + 
+    theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+```
+
+
+
+```
+post_clean_df %>%
+    mutate(ipaddr.len = nchar(ipaddr)) %>% arrange(-ipaddr.len) %>% View
+post_clean_df %>%
+    filter(str_detect(ipaddr, "^\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}")) %>% View
+```
+
+# outer source verification
+```
+gossip_post <- readRDS("../../../../../../Volumes/My Passport/ptt_gossip_201909to12/main_df_PTT_gossiping_201809to12.rds")
+gossip_post %>% 
+    filter(str_detect(main_text, "韓")) %>%
+    filter(!str_detect(main_text, "韓元|南韓|北韓|韓劇|韓文|日韓|韓國隊|兩韓|韓聯社|韓團|韓媒|韓國政府|台韓|大韓民國|美韓|韓國語|韓籍|駐韓|韓服|韓美|韓幣|韓版|韓美軍")) %>%
+    filter(meta_date > as.Date("2018-10-01")) %>%
+    filter(meta_date < as.Date("2018-11-01")) %>% nrow
+
+```
+
+
+
+
+# Questionable IP and User mapping
+
+```{r}
+top10_poster <- post_clean_df %>% count(poster_id) %>% arrange(-n)
+ip2poster <- post_clean_df %>% count(ipaddr, poster_id2 = poster_id)
+
+questionable_ip <- post_clean_df %>% 
+    count(poster_id1 = poster_id, ipaddr) %>% 
+    full_join(ip2poster %>% select(ipaddr, poster_id2, n2 = n)) %>% 
+    group_by(ipaddr) %>%
+    filter(n() > 1) %>%
+    ungroup() %>% 
+    filter(poster_id1 != poster_id2) %>% 
+    arrange(-n)
+
+# ip_top20_poster <- post_clean_df %>% count(ipaddr, poster_id) %>% 
+#     group_by(ipaddr) %>%
+#     top_n(20) %>%
+#     ungroup
+
+post_clean_df %>% count(ipaddr) %>% nrow
+
+```
+
+
+# Lookup ip location
+```{r}
+# devtools::install_github("gitronald/IPtoCountry")
+library(IPtoCountry)
+data(IPs)
+
+IP_split("180.20.23.162")
+IP_integer("180.20.23.162")
+IP_lookup(3021215650)
+IP_country("180.20.23.162")
+
+```
+
+```{r}
+ip2country <- questionable_ip %>% count(ipaddr) %>%
+    mutate(ip.country = purrr::map(ipaddr, function(x){IP_lookup(IP_integer(x))}))
+```
+
+
+```{r}
+questionable_ip %>%
+    left_join(ip2country %>% select(ipaddr, ip.country)) %>% View
+```
+
+
+```{r}
+target <- top10_poster$poster_id[1]
+
+weekdays(as.Date(min(post_clean_df$ptime)) + 2:8)
+min(post_clean_df$ptime)
+
+post_clean_df %>% 
+    filter(poster_id %in% target) %>%
+    mutate(wday = weekdays(ptime)) %>%
+    mutate(hour = hour(ptime)) %>%
+    count(wday, hour) %>%
+    ggplot() + 
+    aes(hour, factor(wday, weekdays(as.Date("2019-06-02") + 0:6)), fill = n) + 
+    geom_tile() + 
+    scale_fill_gradient2(high = "red") +
+    theme_minimal() 
+
+
+```
+
+# join comment and post data
+```{r}
+# paste0("1", "2", "3")
+# 2019/04/12 10:23
+library(lubridate)
+
+comment2post.df <- allc.df %>%
+    left_join(post_clean_df %>% select(plink, poster_id, ptime), by = c("plink")) %>% 
+    mutate(ctime = as.POSIXct(strptime(paste0(year(ptime), "/", ctimestamp), "%Y/%m/%d %H:%M"))) %>%
+    mutate(timediff  = ctime - ptime)
+    
+```
+
+## timediff verification
+
+ - some comment timediff are found to be negative. here 
+
+```{r}
+comment2post.df %>%
+    filter(timediff < 0) %>%
+    count(plink, sort = TRUE)
+
+post_clean_df %>%
+    filter(str_detect(ptitle, "^Fw"))
+```
+
+
+
+```{r}
+toplot <- comment2post.df %>%
+    filter(!is.na(ptime)) %>%
+    count(commentor, poster_id) %>%
+    arrange(-n) %>%
+    slice(1:200)
+```
+
+
+
+```{r}
+library(igraph)
+g <- graph_from_data_frame(toplot, directed = FALSE) 
+Isolated = which(degree(g)==0)
+g = delete.vertices(g, Isolated)
+g <- simplify(g, remove.loops = T, 
+              remove.multiple = F)
+
+?simplify
+E(g)$n
+V(g)$size = centralization.degree(g)$res + 1
+
+E(g)$weight <- E(g)$n
+is.weighted(g)
+
+# E(g)$weight
+
+l <- layout_with_kk(g)
+# l <- layout_with_mds(g)  
+# l <- layout_with_fr(g)
+# l <- layout_with_sugiyama(g)
+# l <-  layout_with_lgl(g)
+# l <- layout_with_circle(g)
+# l <- layout_with_gem(g) # GEM force-directed
+
+
+
+# pdf("plot.pdf",10,10)
+plot(g, vertex.label = V(g)$name,  
+     edge.curved = 0.2,
+     vertex.label.cex = sqrt(V(g)$size)/6,
+     vertex.size  = sqrt(V(g)$size),
+     edge.arrow.size = 0, 
+     layout = l,
+     edge.width = log10(E(g)$n - min(E(g)$n) + 1),
+     vertex.label.family = 'Heiti TC Light',
+     edge.color = rgb(0.5,0.5,0.5,0.5))
+# dev.off()
+```
+
+# Draw network by ggraph
+```{r}
+library(ggraph)
+set.seed(2017)
+
+ggraph(g, layout = "fr") +
+  geom_edge_link() +
+  geom_node_point() +
+  geom_node_text(aes(label = name), vjust = 1, hjust = 1)
+
+
+ggraph(g, layout = "kk") +
+  geom_edge_link(aes(edge_alpha = n), show.legend = FALSE) +
+  geom_node_point(color = "lightblue", size = 5) +
+  geom_node_text(aes(label = name), vjust = 1, hjust = 1, color = "blue", alpha = 0.5) +
+  theme_void()
+
+```
+
+# temporal pattern
+```{r}
+comment2post.df %>%
+    filter(timediff > 0) %>%
+    filter(timediff < 86400) %>%
+    ggplot() + 
+    aes(timediff) + 
+    geom_density() + 
+    scale_y_sqrt()
+```
+
+
+
+```{r}
+timediff.stat <- comment2post.df %>%
+    filter(timediff > 0, 
+           timediff < 86400) %>%
+    group_by(commentor) %>%
+    summarize(
+        n = n(),
+        timediff.median = median(timediff),
+        timediff.std = sd(timediff),
+        timediff.75 = quantile(timediff, 0.75), 
+        timediff.25 = quantile(timediff, 0.25),
+        timediff.min = min(timediff), 
+        timediff.max = max(timediff),
+        timediff.span = timediff.max - timediff.min
+    ) %>%
+    ungroup()
+```
+
+```{r}
+timediff.stat %>%
+    filter(n > 20) %>%
+    ggplot() + aes(n) + 
+    geom_density() + 
+    scale_y_sqrt()
+```
+
+
+
+```{r}
+timediff.stat %>%
+    filter(timediff.std < 20000) %>%
+    arrange(-n) %>%
+    top_n(500) %>%
+    ggplot() + 
+    aes(timediff.median, timediff.std, size = n/100) + 
+    geom_point(color = "blue", alpha = 0.3)
+```
+

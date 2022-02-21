@@ -1,0 +1,145 @@
+---
+title: "R05_6_TM_President_Speech"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(stringr)
+library(tidytext)
+library(jiebaR)
+library(lubridate)
+options(stringsAsFactors = F)
+```
+
+
+# Loading data
+```{r}
+fnames <- list.files("06_tm/data/president_speech/", full.names = T)
+contents <- c()
+for(fn in fnames){
+    contents <- c(contents, read_file(fn))
+}
+
+raw.df <- tibble(fname = fnames, content = contents) %>%
+    mutate(fname = str_replace(fname, ".*_speech//([0-9]+)", "\\1"),
+           fname = str_c("p", str_pad(fname, 2, pad="0"))) %>%
+    mutate(content = str_replace_all(content, "台灣", "臺灣"))
+```
+
+
+
+
+# Tokenization
+## Initial jeiba tokenizer
+
+```{r}
+segment_not <- c("蔡英文", "馬英九")
+cutter <- worker()
+new_user_word(cutter, segment_not)
+stopWords <- readRDS("06_tm/data/stopWords.rds")
+watched <- c("青年")
+```
+
+
+## Tokenized to tidy form -> unnested.df
+```{r}
+unnested.df <- raw.df %>% 
+    mutate(word = map(content, function(x)segment(x, cutter))) %>%
+    unnest(word) %>%
+    filter(!str_detect(word, "[a-zA-Z0-9]+") | (word %in% watched)) %>%
+    filter(!(word %in% setdiff(stopWords, watched))) %>%
+    filter(nchar(word) > 1 | (word %in% watched)) %>%
+    select(doc = fname, word)
+# %>%
+#     filter(!word %in% c("我們", "臺灣"))
+```
+
+
+## Visualizing key terms in each document by tf-idf
+```{r}
+unnested.df %>%
+    group_by(word) %>%
+    filter(n() > 10) %>%
+    ungroup() %>%
+    count(doc, word) %>%
+    bind_tf_idf(word, doc, n) %>%
+    group_by(doc) %>%
+    arrange(desc(tf_idf)) %>%
+    slice(1:20) %>%
+    ungroup() %>%
+    mutate(word = reorder(word, tf_idf)) %>%
+    ggplot() + aes(word, tf_idf) + 
+    geom_col() + 
+    coord_flip() + 
+    facet_wrap(~doc, scales = "free", ncol=4) +
+    theme(axis.text.y=element_text(family="Heiti TC Light"))
+```
+
+
+# Topic modeling
+## Convert to doc-term-matrix
+```{r}
+doc_term_count <- unnested.df %>%
+    count(doc, word)
+
+doc_term_count <- unnested.df %>%
+    group_by(word) %>%
+    filter(n() > 5) %>%
+    ungroup() %>%
+    count(doc, word) %>%
+    bind_tf_idf(word, doc, n) %>%
+    group_by(doc) %>%
+    arrange(desc(tf_idf)) %>%
+    slice(1:200) %>%
+    ungroup()
+
+dtm <- cast_dtm(doc_term_count, doc, word, n)
+```
+
+## Topic modeling by LDA
+```{r}
+library(topicmodels)
+dtm_lda <- LDA(dtm, k = 12, control = list(seed = 1234))
+```
+
+```{r}
+library(ggplot2)
+dtm_topics <- tidy(dtm_lda, matrix = "beta")
+
+top_terms <- dtm_topics %>%
+	group_by(topic) %>%
+	top_n(15, beta) %>%
+	ungroup() %>%
+	arrange(topic, -beta)
+
+top_terms %>%
+	mutate(term = reorder(term, beta)) %>%
+	ggplot(aes(term, beta, fill = factor(topic))) +
+	geom_col(show.legend = FALSE) +
+	facet_wrap(~ topic, scales = "free") +
+	coord_flip() +
+	theme(axis.text.y=element_text(colour="black", family="Heiti TC Light"))
+```
+
+
+## Evaluation
+```{r}
+perplexity(dtm_lda)
+```
+## Document-topic probability: gamma
+```{r}
+
+tidy(dtm_lda, matrix = "gamma") %>%
+    mutate(topic = str_pad(topic, 2, pad = "0")) %>%
+    mutate(gamma = log10(gamma)) %>%
+	# spread(topic, gamma)
+    ggplot() + aes(topic, document, fill = gamma) + 
+    geom_raster()
+```
+
+

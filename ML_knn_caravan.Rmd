@@ -1,0 +1,136 @@
+---
+title: "ML_KNN"
+subtitle: "Toward machine learning"
+author: "JILUNG HSIEH"
+institute: "Journalism, NTU"
+date: "2019/06/18 (updated: `r Sys.Date()`)"
+output:
+  xaringan::moon_reader:
+    lib_dir: libs
+    nature:
+      highlightStyle: github
+      highlightLines: true
+      countIncrementalSlides: false
+    self_contained: TRUE
+---
+# About the data
+
+
+
+
+# Loading packages
+
+```{r}
+library(tidyverse)
+options(stringsAsFactors = F)
+```
+
+
+
+# Playing with dataset Caravan
+
+- This data set used in the CoIL 2000 Challenge contains information on customers of an insurance company. The data consists of 86 variables and includes product usage data and socio-demographic data derived from zip area codes. 
+
+- **Dependent variable** The data was collected to answer the following question: Can you predict who would be interested in buying a caravan insurance policy and give an explanation why?
+
+- Reference: https://www.kaggle.com/uciml/caravan-insurance-challenge
+
+```{r}
+# install.packages('ISLR')
+library(ISLR)
+str(Caravan)
+summary(Caravan$Purchase)
+dim(Caravan)
+```
+
+# Data Cleanning
+
+## Dealing with NAs
+
+```{r}
+any(is.na(Caravan))
+```
+
+## Variable standarization
+- If not standarized, large varied variables will dominate the results
+- Using `scale(vars)` to standarized multiple variables. scale is generic function whose default method centers and/or scales the columns of a numeric matrix.
+
+---
+```{r}
+purchase <- Caravan[,86]
+standardized.Caravan <- scale(Caravan[,-86])
+
+```
+
+
+
+# Preparing traning and texting dataset
+
+## Get sampling index
+- https://dataaspirant.com/2017/01/09/knn-implementation-r-using-caret-package/
+
+```{r}
+# Method 1
+# train <- 1:1000
+
+# Method 2
+train <- sample(nrow(standardized.Caravan), ceiling(nrow(standardized.Caravan) * .60))
+
+# Method 3
+# train <- caret::createDataPartition(y = 1:nrow(standardized.Caravan), p= 0.7, list = FALSE)
+```
+
+
+## Splitting by index
+```{r}
+train.data <- standardized.Caravan[train, ]
+test.data <- standardized.Caravan[-train, ]
+train.purchase <- purchase[train]
+test.purchase <- purchase[-train]
+```
+
+
+
+---
+## Training
+```{r}
+library(class)
+set.seed(101)
+
+# Predicted by the nearest element
+predicted.purchase <- knn(train.data, test.data, train.purchase, k = 1)
+mean(test.purchase != predicted.purchase) # Error case percentage
+
+# Predicted by 3 nearest elements
+predicted.purchase <- knn(train.data, test.data, train.purchase, k = 3)
+mean(test.purchase != predicted.purchase) # Error case percentage
+
+# Predicted by k = 5
+predicted.purchase <- knn(train.data, test.data, train.purchase, k = 5)
+mean(test.purchase != predicted.purchase) # Error case percentage
+```
+
+---
+## Training
+```{r}
+# var.df <- data.frame(k.value = 1:20) %>%
+#     mutate(predicted.purchase = purrr::map(k.value, function(x) knn(train.data, test.data, train.purchase, k=x))) %>%
+#     mutate(error.rate = purrr::map(predicted.purchase, function(x)mean(test.purchase!= x))) %>%
+#     mutate(error.rate = unlist(error.rate))
+
+var.df <- tibble()
+for(k.value in 1:20){
+    predicted.purchase = knn(train.data, test.data, train.purchase, k = k.value)
+    error.rate = mean(test.purchase != predicted.purchase)
+    var.df <- bind_rows(var.df, tibble(k.value, error.rate))
+    cat(k.value, "\t", error.rate, "\n")
+}
+
+var.df %>%
+    ggplot() + aes(k.value, error.rate) + 
+    geom_point() +
+    geom_line(lty="dotted",color='red')
+```
+
+
+

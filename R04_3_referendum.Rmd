@@ -1,0 +1,99 @@
+---
+title: "R04_3_referendum"
+author: "Jilung Hsieh"
+date: "2019/5/12"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+options(stringsAsFactors = F)
+```
+
+
+
+# Loading ref10 data
+
+```{r}
+ref10 <- read_csv("twdata/referendum_byTown/ref10.csv")
+
+names(ref10) <- c("refno", "county", "town", "n_agree", "n_disagree", "n_valid", "n_invalid", "n_ticket", "n_people", "perc_ticket", "perc_agree", "perc_disagree", "agree_disagree")
+```
+
+
+## Clean and summarize
+```{r}
+
+town_ref10 <- ref10 %>%
+    filter(!is.na(town)) %>%
+    select(refno, county, town, n_agree, n_disagree, n_valid, n_invalid, n_ticket, n_people) %>%
+    mutate(townfull = paste0(county, town)) %>%
+    mutate(perc_ticket = n_ticket / n_people,
+           perc_agree = n_agree / n_ticket,
+           perc_disagree = 1 - perc_agree)
+
+
+    
+```
+
+## Vis01 by ggplot()
+```{r}
+load("twdata/town_stat.rda")
+town_stat %>%
+    mutate(site_id = str_replace_all(site_id, "　", "")) %>%
+    left_join(town_ref10, by=c("site_id"="townfull")) %>%
+    ggplot() + 
+    aes(elderPerc, perc_agree) + 
+    geom_jitter(alpha = 0.5)
+```
+
+
+## Vis02 (better)
+```{r}
+town_stat %>%
+    mutate(site_id = str_replace_all(site_id, "　", "")) %>%
+    left_join(town_ref10, by=c("site_id"="townfull")) %>%
+    ggplot() + 
+    aes(elderPerc, perc_agree, size = people) + 
+    geom_jitter(alpha = 0.5, color = "royalblue") +
+    geom_text(aes(label = site_id), check_overlap = TRUE, vjust = 1.5, family="黑體-繁 中黑")
+
+```
+
+
+
+# Loading all referendum
+```{r}
+files <- list.files("twdata/referendum_byTown/", full.names = T)
+referendum_town <- data.frame()
+for(f in files){
+    ref <- read_csv(f)
+    names(ref) <- c("refno", "county", "town", "n_agree", "n_disagree", "n_valid", "n_invalid", "n_ticket", "n_people", "perc_ticket", "perc_agree", "perc_disagree", "agree_disagree")   
+
+    town_ref <- ref %>%
+    filter(!is.na(town)) %>%
+    select(refno, county, town, n_agree, n_disagree, n_valid, n_invalid, n_ticket, n_people) %>%
+    mutate(townfull = paste0(county, town)) %>%
+    mutate(perc_ticket = n_ticket / n_people,
+           perc_agree = n_agree / n_ticket,
+           perc_disagree = 1 - perc_agree)
+    
+    referendum_town <- bind_rows(referendum_town, town_ref)
+}
+```
+
+## Saving
+```{r}
+referendum_town %>%
+    mutate(refno = str_replace(refno, "第([0-9]+)案", "ref\\1")) %>%
+    save(file = "twdata/referendum_town.rda")
+
+```
+
+
+
+

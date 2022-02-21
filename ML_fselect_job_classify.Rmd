@@ -1,0 +1,290 @@
+---
+title: "job classification"
+output: revealjs::revealjs_presentation
+---
+
+# 00 Introduction
+
+## 0.1 fields
+- 「公司名稱」、「主要產品、服務內容」主要關係個人從事的行業；
+- 而「部門」、「職位」、「詳細工作內容」主要關係個人的職業。
+- 公司名稱（k_a08a_1）、「主要產品、服務內容」（k_a08a_2）、部門（k_a08a_3）、職位（k_a08a_4）及詳細工作內容（k_a08a_5）
+- 行業：以「主要產品、服務內容」為主，公司名稱為次要資訊。
+- 職業：以「詳細工作內容」為主，部門及職位為次要資訊。
+- 小結: 產業(industry)跟職缺(position)
+
+# 01 Loading data
+
+## 1.0 Importing
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
+library(tidyverse)
+library(tidytext)
+library(jiebaR)
+library(widyr)
+library(readxl)
+options(stringsAsFactors = F)
+```
+
+## 1.1 Reading data
+```{r}
+library(readxl)
+df.train <- read_excel("data/job_train.xlsx") %>% as_tibble()
+df.test <- read_excel("data/job_test.xlsx") %>% as_tibble()
+# df_sample <- read_csv("sample_submission.csv") %>% as_tibble()
+```
+
+## 1.2 Cleaning data
+```{r}
+# library(tmcn)
+# install.packages("tmcn")
+# library(tm)
+# install.packages("tm")
+?str_remove_all
+train.clean <- df.train %>% 
+    rename(doc_id = x01, industry = a08a01, job = a08a02, name = k_a08a_1, 
+           company = k_a08a_2, department = k_a08a_3, position = k_a08a_4, 
+           description = k_a08a_5) %>%
+    mutate(doc_id = str_c("d", as.character(doc_id)),
+           job = as.character(job),
+           name = str_trim(name)) %>%
+    mutate(name = str_remove_all(name, "[:lower:]|[:upper:]|[:digit:]|[:punct:]")) %>%
+    mutate(company = str_remove_all(company, "[:lower:]|[:upper:]|[:digit:]|[:punct:]")) %>%
+    mutate(department = str_remove_all(department, "[:lower:]|[:upper:]|[:digit:]|[:punct:]")) %>%
+    mutate(position = str_remove_all(position, "[:lower:]|[:upper:]|[:digit:]|[:punct:]")) %>%
+    mutate(description = str_remove_all(description, "[:lower:]|[:upper:]|[:digit:]|[:punct:]"))
+
+??toTrad
+```
+
+
+
+## 1.3 Previewing data
+
+```{r}
+# train.clean
+# train.clean %>% get_colnames()
+train.clean %>% count(industry, sort = T) %>% nrow
+train.clean %>% count(job, sort = T) %>% nrow
+```
+
+## 1.4 Initilizing Tokenizer
+```{r}
+segment_not <- c("大潤發", "資生堂", "宏偉", "化妝品", "伊莉兒", "完成品", "護理師")
+cutter <- worker()
+new_user_word(cutter, segment_not)
+stopWords <- read_rds("data/stopWords.rds")
+```
+
+## 1.5 Tokenization
+```{r}
+unnested.df <- train.clean %>% 
+    mutate(text = str_c(name, company, department, position, description, sep = "," )) %>%
+    mutate(word = purrr::map(text, function(x)segment(x, cutter))) %>%
+    unnest(word) %>%
+    filter(!(word %in% stopWords$word)) %>%
+    filter(!str_detect(word, "[a-zA-Z0-9]+"))
+```
+
+## 1.6 Exploring features of unnesting
+```{r}
+unnested.df %>% count(word, sort = T) %>% View
+
+unnested.df %>%
+    select(word, doc_id) %>%
+    pairwise_count(word, doc_id, sort = T) %>% View
+
+
+unnested.df %>%
+    select(word, doc_id) %>%
+    group_by(doc_id) %>%
+    mutate(word2 = lead(word)) %>%
+    ungroup() %>% 
+    count(word, word2, sort = T) %>% 
+    filter(!is.na(word2)) %>% View
+    
+```
+
+# 02 Feature selections
+
+## 2.1 All words as features
+```{r}
+doc_word_count <- unnested.df %>%
+    filter(!word %in% c("無")) %>%
+    count(doc_id, word)
+```
+
+
+## 2.2 filtering words by tf-idf
+
+```{r}
+doc_word_count <- unnested.df %>%
+    filter(!word %in% c("無")) %>%
+    group_by(word) %>%
+    filter(n() > 10) %>%
+    ungroup() %>% 
+    count(doc_id, word) %>%
+    bind_tf_idf(word, doc_id, n) %>%
+    arrange(desc(tf_idf)) %>%
+    filter(log(tf_idf) > mean(log10(tf_idf)) + sd(log10(tf_idf)))
+
+# Exploring distribution of word frequency
+unnested.df %>%
+    filter(!word %in% c("無")) %>%
+    count(doc_id, word) %>%
+    bind_tf_idf(word, doc_id, n) %>%
+    ggplot() + 
+    aes(tf_idf)  + 
+    geom_density() + 
+    scale_x_log10()
+
+# train_tfidf %>%
+#   filter(str_detect(word, "有限公司"))
+
+# train_tfidf %>%
+#   filter(tf_idf > 1.3) %>%
+#   distinct(word)
+
+```
+
+
+# 03 Building dtm
+```{r}
+dtm <- doc_word_count %>%
+    cast_dtm(document = doc_id, term = word, value = n)
+
+
+# Removing sparse terms
+# dtm %>% dim()
+# inspect(dtm[1:10,])
+# 
+# dtm.sparse.25 <- removeSparseTerms(dtm, .25)
+# dtm.sparse.95 <- removeSparseTerms(dtm, .9995)
+# dtm %>% dim
+# dtm.sparse.25 %>% dim
+# dtm.sparse.95 %>% dim
+```
+
+
+
+# 04 Building x and y, independent and dependent variable
+```{r}
+x <- as.matrix(dtm)
+
+y <- tibble(doc_id = dtm$dimnames$Docs) %>%
+    left_join(train.clean %>% select(doc_id, label = job))
+                  
+```
+
+
+
+# 05. Splitting to training and testing data
+
+```{r}
+indices <- sample(1:nrow(y), ceiling(nrow(y) * .70))
+```
+
+
+
+
+
+
+# 06. knn
+```{r}
+library(class)
+start_time <- Sys.time()
+# x[indices,] %>% head()
+knn.pred <- knn(x[indices, ], x[-indices, ], y$label[indices], k = 10)
+dim(x[indices, ])
+Sys.time() - start_time
+```
+
+
+```{r}
+conf.mat <- table("Predictions" = knn.pred, Actual = y$label[-indices])
+conf.mat %>% as_tibble %>% spread(Actual, n) %>% View
+(accuracy <- sum(diag(conf.mat))/sum(conf.mat) * 100)
+```
+
+
+
+
+# 05 Dim reduction
+## 5.1 svd and pca
+```{r}
+
+dfm.pca <- dfm.sparse.95 %>% 
+    as.matrix() %>%
+    prcomp(center = TRUE, scale. = TRUE)
+
+dtm.svd = svd(dtm)
+
+save(dfm.pca, dfm.svd, file = "job_classify_svd_pca.rda")
+
+# svd_matrix %>% write_rds("svd.rds")
+# svd_matrix <- read_rds("svd.rds")
+```
+
+## 5.2 Visualizing svd
+```
+tibble(i = 1:500, d = dfm.svd$d[1:500]) %>%
+  ggplot(aes(i,d)) +
+  geom_point() + scale_x_log10() +
+  ylim(0,20)+ xlim(40,500)+
+  labs(title="Spectrum with CCA Scaling",  x="Dimension", y="Singular Value")
+```
+
+## 5.3 Choose SVD
+```{r}
+svd_matrix_u <- dtm.svd$u[,1:100]
+colnames(svd_matrix_u) <- paste0("d", 1:100)
+
+features <- train.clean %>% 
+    select(job) %>%
+    mutate(job = as.factor(job)) %>%
+    bind_cols(svd_matrix_u %>% as.data.frame())
+```
+
+## 5.4 Choose PCA
+```{r}
+features <- train.clean %>% 
+    select(job) %>%
+    mutate(job = as.factor(job)) %>%
+    bind_cols(dfm.pca$x %>% as_tibble() %>% select(1:160))
+
+```
+
+
+## 5.5 without dimension reduction
+```{r}
+dfm.df <- dfm.sparse.95 %>% as.matrix() %>% as.data.frame()
+colnames(dfm.df) <- paste0("d", 1:ncol(dfm.df))
+features <- train.clean %>% 
+    select(job) %>%
+    mutate(job = as.factor(job)) %>%
+    bind_cols(dfm.df)
+# dfm.sparse.95
+```
+
+
+
+# split
+
+## split by sampling
+```{r}
+set.seed(1)
+index_split <- sample(1:3200, 3200*0.8)
+feature.train <- features[index_split,]
+feature.test  <- features[-index_split,]
+dim(feature.train)
+dim(freature.test)
+```
+
+## split by specific index
+```
+feature.train <- features[1:3200,]
+feature.test  <- features[-(1:3200),]
+dim(feature.train)
+
+feature.train[1:6, 1400:1430] %>% View
+dim(freature.test)
+```

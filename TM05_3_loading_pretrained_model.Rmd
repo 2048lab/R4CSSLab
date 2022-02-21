@@ -1,0 +1,69 @@
+---
+title: "TM05_3_loading_pretrained_model"
+output:
+  xaringan::moon_reader:
+    self_contained: True
+    nature:
+      highlightStyle: github
+      highlightLines: true
+      ratio: "16:9"
+---
+
+# Readings
+- [文字中的性別偏見](http://www.twepress.net/new/seminar/item/794-2019-05-14-09-09-35?fbclid=IwAR09JoSjZifU6hT2hFgsVFeU_sch-WZOUOZKZGDuaKf1CTEaptEyfB53nI4)
+
+
+---
+# Play with pre-trained word embedding model
+
+# Loading pre-trained model
+- I load a facebook pre-trained word vector model by wikipedia corpus. The model cna be downloaded [here](https://fasttext.cc/docs/en/pretrained-vectors.html). 
+- You can find R wrapper [fastTextR](https://cran.r-project.org/web/packages/fastTextR/README.html) here
+
+```{r}
+# install.packages("fastTextR")
+# library(fastTextR)
+# model <- read.fasttext("../../../../Downloads/bin/wiki.zh_classical/wiki.zh_classical.bin")
+```
+
+---
+```{r}
+# install.packages("wordVectors")
+library(wordVectors)
+# model <- read.fasttext("/Volumes/My\ Passport/word_embedding_vec/wiki.zh_classical/wiki.zh_classical.vec")
+```
+
+
+
+---
+# Loading google news vector model
+```{r}
+# devtools::install_github("bmschmidt/wordVectors")
+library(wordVectors)
+```
+
+```{r}
+model.en = read.vectors("/Volumes/My\ Passport/word_embedding_vec/GoogleNews-vectors-negative300.bin")
+model.ckip = read.vectors("/Volumes/OWC/vecbin/w2v_CNA_ASBC_300d.vec", binary = F)
+model.glove = read.vectors("/Volumes/My\ Passport/word_embedding_vec/Glove_CNA_ASBC_300d.vec", binary = F)
+
+```
+
+
+# Performance sucks!
+```{r}
+closest_to(model.glove,"媽媽",10)
+closest_to(model.glove, ~ "醫生" - "他" + "她", 20)
+closest_to(model.glove, ~ "醫生" - "她" + "他", 20)
+closest_to(model.ckip, ~ "工程師" - "他" + "她", 20)
+closest_to(model.ckip, ~ "工程師" - "她" + "他", 20)
+closest_to(model.ckip, ~ "醫生" - "男" + "女", 20)
+closest_to(model.ckip, ~ "醫生" - "女" + "男" , 20)
+closest_to(model.ckip, ~ "結婚" - "男" + "女", 20)
+closest_to(model.ckip, ~ "結婚" - "女" + "男", 20)
+?closest_to
+```
+
+
+
+

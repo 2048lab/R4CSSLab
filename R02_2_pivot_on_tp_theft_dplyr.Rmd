@@ -1,0 +1,160 @@
+---
+title: "R02_2 Pivot analysis on tp theft with dplyr"
+author: "Jilung Hsieh"
+date: "2019/9/2"
+output:
+  html_document:
+    highlight: zenburn
+    number_sections: yes
+    theme: cerulean
+    toc: yes
+editor_options:
+  chunk_output_type: inline
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# loading packages
+```{r}
+library(tidyverse)
+options(stringsAsFactors = F)
+```
+
+# Reading data
+```{r}
+# Read by read_csv()
+# Will raise error
+# Error in make.names(x) : invalid multibyte string at '<bd>s<b8><b9>'
+# df <- read_csv("data/tp_theft.csv")
+
+# read_csv() with locale = locale(encoding = "Big5")
+library(readr)
+url <- "http://data.taipei/opendata/datalist/datasetMeta/download?id=68785231-d6c5-47a1-b001-77eec70bec02&rid=34a4a431-f04d-474a-8e72-8d3f586db3df"
+df <- read_csv(url, locale = locale(encoding = "Big5"))
+```
+
+
+# Cleaning data I
+- Renaming variables by `select()`
+- Generating variable year
+- Generating variable month
+- Retrieving area
+```{r}
+selected_df <- df %>%
+    select(id = 編號, 
+           cat = 案類, 
+           date = `發生(現)日期`, 
+           time = `發生時段`, 
+           location = `發生(現)地點`) %>%
+    mutate(year = date %/% 10000) %>%
+    mutate(month = date %/% 100 %% 100) %>%
+    mutate(area = stringr::str_sub(location, 4, 6)) %>%
+    mutate(county = stringr::str_sub(location, 1, 3))
+```
+
+# Cleaning data II
+- Filtering out irrelevant data records
+
+```{r}
+# readr::guess_encoding("data/tp_theft.csv")
+filtered_df <- selected_df %>%
+    # count(year) %>% View
+    filter(county == "台北市") %>%
+    filter(year >= 104) %>%
+    # count(time) %>% View
+    # count(location) %>%
+    filter(!area %in% c("中和市", "板橋市"))
+```
+
+
+# Long to wide form
+- `count()` two variables
+- `spread()` spread one variable as columns to wide form
+
+```{r}
+# count() then spread()
+df.wide <- filtered_df %>% 
+    count(time, area) %>%
+    spread(area, n, fill=0) 
+```
+
+
+# Setting time as row.name for mosaicplot
+```{r}
+row.names(df.wide) <- df.wide$time
+df.wide$time <- NULL
+```
+
+
+
+
+```{r warning=FALSE}
+
+# Specify fonts for Chinese
+# par(family=('STKaiti')) 
+par(family=('Heiti TC Light')) # for mac
+
+# Specify colors
+colors <- c('#D0104C', '#DB4D6D', '#E83015',  '#F75C2F',
+            '#E79460', '#E98B2A', '#9B6E23', '#F7C242',
+            '#BEC23F', '#90B44B', '#66BAB7', '#1E88A8')
+
+# mosaicplot()
+mosaicplot(df.wide, color=colors, border=0, off = 3,
+           main="Theft rate of Taipei city (region by hour)")
+
+```
+
+# Clean version
+```{r}
+library(readr)
+options(stringsAsFactors = F)
+url <- "https://data.taipei/api/getDatasetInfo/downloadResource?id=68785231-d6c5-47a1-b001-77eec70bec02&rid=93d9bc2d-af08-4db7-a56b-9f0a49226fa3"
+df <- read_csv(url, locale = locale(encoding = "Big5"))
+
+selected_df <- df %>%
+    select(id = 編號, 
+           cat = 案類,
+           date = `發生(現)日期`, 
+           time = `發生時段`, 
+           location = `發生(現)地點`) %>%
+    mutate(year = date %/% 10000) %>%
+    mutate(month = date %/% 100 %% 100) %>%
+    mutate(area = stringr::str_sub(location, 4, 6)) %>%
+    mutate(county = stringr::str_sub(location, 1, 3))
+
+selected_df %>% count(year) %>% View
+
+selected_df %>% count(time) %>% View
+selected_df %>% arrange(time) %>% View
+
+filtered_df <- selected_df %>%
+    # count(year) %>% View
+    filter(year >= 104) %>%
+    filter(!time %in% c("00~03", "06~09", "09~12", "12~15", "15~18", "19~21", "21~24"))
+    # count(time) %>% View
+    # count(location) %>%
+    # filter(!area %in% c("中和市", "板橋市"))
+
+df.wide <- filtered_df %>% 
+    count(time, area) %>%
+    spread(area, n, fill=0)    
+
+row.names(df.wide) <- df.wide$time
+df.wide$time <- NULL
+
+par(family=('Heiti TC Light')) # for mac
+
+# Specify colors
+colors <- c('#D0104C', '#DB4D6D', '#E83015',  '#F75C2F',
+            '#E79460', '#E98B2A', '#9B6E23', '#F7C242',
+            '#BEC23F', '#90B44B', '#66BAB7', '#1E88A8')
+
+# mosaicplot()
+mosaicplot(df.wide, color=colors, border=0, off = 3,
+           main="Theft rate of Taipei city (region by hour)")  
+```
+

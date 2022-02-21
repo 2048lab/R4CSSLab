@@ -1,0 +1,46 @@
+---
+title: "R04_1_tw_demography_base"
+author: "Jilung Hsieh"
+date: "2019/4/17"
+output: html_document
+---
+
+* https://rfrd-tw.github.io/
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+options(stringsAsFactors = F)
+```
+
+# by base
+```{r}
+raw <- read.csv("twdata/opendata107Y030.csv")
+df1 <- raw[-1,]
+df.stat <- df1[,1:4]
+df1$single_age_15down_m <- as.numeric(df1$single_age_15down_m)
+df1$single_age_15_19_m <- as.numeric(df1$single_age_15_19_m)
+m1 <- apply(df1[,5:156], MARGIN = 2, function(x) as.numeric(x))
+df2 <- as.data.frame(m1)
+# 19 age levels * 2 gender levels, * 4 married cond. levels
+# single_19_m(1:19), single_19_f(20:38), married_19_m(39:57), married_19_f(58:76), divorced_19_m(77:95), divorced_19_f(96:114), wisdow_19_m(115:133), wisdow_19_f(134:152)
+?apply
+
+
+
+df.stat$married <- apply(df2[,39:152], 1, function(x) sum(x))
+df.stat$npeople <- apply(df2, 1, function(x) sum(x))
+df.stat$elder <- apply(df2[,c(12:19, 31:38, 50:57, 69:76, 89:95, 97:114, 126:133, 145:152)], 1, function(x) sum(x))
+df.stat$age0 <- apply(df2[,grep("15down", names(df2))], 1, function(x) sum(x))
+df.stat$age15 <- apply(df2[,seq(2, 152, 19)], 1, function(x) sum(x))
+df.stat$age20 <- apply(df2[,seq(3, 152, 19)], 1, function(x) sum(x))
+df.stat$age25 <- apply(df2[,seq(4, 152, 19)], 1, function(x) sum(x))
+df.stat$age30 <- apply(df2[,seq(5, 152, 19)], 1, function(x) sum(x))
+df.stat$elderPerc <- df.stat$elder / df.stat$npeople
+df.stat$marriedPerc <- df.stat$married / df.stat$npeople
+?sequence
+```
+

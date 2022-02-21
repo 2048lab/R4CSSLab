@@ -1,0 +1,128 @@
+---
+title: "ML01_2_KNN_Multi_classification"
+author: "Jilung Hsieh"
+date: "10/30/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# The case: Multi-class classification
+- https://datascienceplus.com/multi-class-text-classification-with-scikit-learn/
+- http://rpubs.com/JWB62/394875
+
+# Importing
+```{r}
+library(tidyverse)
+options(stringsAsFactors = F)
+```
+
+# Loading data
+```
+sample <- read_csv("data/Consumer_Complaints.csv") %>%
+    filter(nchar(Consumer.complaint.narrative) > 1)  %>%
+    sample_frac(0.10)
+```
+
+```{r}
+# save(sample, file = "mldata/consumer_complaint_sampled.rda")
+load("mldata/consumer_complaint_sampled.rda")
+dim(sample)
+str(sample)
+names(sample)
+```
+
+```{r}
+df <- sample %>%
+    mutate(Product = str_replace(Product, "Credit card or prepaid card", "Credit card")) %>%
+    mutate(Product = str_replace(Product, "Money transfer, virtual currency, or money service", "Money transfer")) %>%
+    mutate(Product = str_replace(Product, "Payday loan, title loan, or personal loan", "Payday loan")) %>%
+    filter(!Product %in% c("Virtual currency", "Other financial service"))
+```
+
+## data preparation
+```{r}
+library(tidytext)
+library(stringr)
+
+unnested.df <- df %>%
+    unnest_tokens(word, Consumer.complaint.narrative, token = "regex", pattern = "[^A-Za-z\\d#@']") %>%
+    mutate(word = str_to_lower(word)) %>%
+  	filter(!word %in% stop_words$word,
+  		   str_detect(word, "[a-z]")) %>%
+    filter(nchar(word) > 0) %>%
+    filter(!str_detect(word, '^\'|\"')) %>%
+    filter(!str_detect(word, "x+"))
+    
+```
+
+## count tf_idf
+```{r}
+tf_idf <- unnested.df %>%
+    count(Complaint.ID, word) %>%
+    bind_tf_idf(word, Complaint.ID, n) %>%
+    filter(log10(tf_idf) > mean(log10(tf_idf)) + sd(log10(tf_idf))) %>%
+    filter(n > 1)
+
+tf_idf %>%
+    ggplot() + aes(tf_idf) + 
+    geom_density() + 
+    scale_x_log10()
+```
+
+## Building dfm - Document-term matrix
+
+```{r}
+# install.packages("quanteda")
+library(quanteda)
+
+dfm <- unnested.df %>%
+    count(Complaint.ID, word, sort = TRUE) %>%
+    cast_dfm(Complaint.ID, word, n)
+
+```
+
+
+## dfm to df
+```{r}
+dfm.df <- tibble(data.matrix(dfm), stringsAsfactors = FALSE) %>%
+    rownames_to_column(var = "Complaint.ID") %>%
+    left_join(df %>% 
+              select(Complaint.ID, Product) %>%
+              mutate(Complaint.ID = as.character(Complaint.ID)), 
+              by = "Complaint.ID")
+# Error: vector memory exhausted (limit reached?)
+```
+
+## building training set
+```{r}
+train.index <- sample(nrow(dfm.df), ceiling(nrow(dfm.df) * .70))
+test.index <- (1:nrow(dfm.df))[- train.index]
+train.df <- dfm.df[train.index, ]
+test.df <- dfm.df[-train.index, ]
+```
+
+
+
+##training
+```{r}
+category <- dfm.df$Product
+totrain <- train.df %>% select(-Product)
+knn.predict <- knn(totrain)
+```
+
+
+
+
+```{r}
+tf_df %>% count(word) %>% nrow
+dfm <- tf_idf %>%
+    spread(word, n, fill = 0)
+```
+
+
+
+
+

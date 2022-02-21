@@ -1,0 +1,21 @@
+---
+title: "R04_4_tidy_tw_edu"
+author: "Jilung Hsieh"
+date: "2019/4/21"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+options(stringsAsFactors = F)
+```
+
+
+```{r}
+raw <- read.csv("twdata/opendata107Y020.csv")
+```
+

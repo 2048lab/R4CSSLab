@@ -1,0 +1,195 @@
+---
+title: "R05_4_sentiment_en_trump_tweets"
+author: "Jilung Hsieh"
+date: "2019/11/1"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# Load and clean data
+
+```{r}
+library(tidyverse)
+options(stringsAsFactors = F)
+```
+
+# Loading data
+```{r}
+load(url("http://varianceexplained.org/files/trump_tweets_df.rda"))
+dim(trump_tweets_df)
+names(trump_tweets_df)
+```
+
+
+
+
+# Cleaning data
+- Extracting publishing device of tweets
+```{r}
+library(tidyr) # tidyr::extract()
+library(stringr) # stringr::str_replace
+trump_tweets_df$statusSource[1]
+tweets <- trump_tweets_df %>%
+    select(id, statusSource, text, created) %>%
+    # mutate(source = str_replace(statusSource, 
+    #                             ".*Twitter for (.*?)<.*", "\\1")) %>%
+    # mutate(source = str_extract(statusSource, 'Twitter for (.*?)<')) %>%
+    extract(statusSource, "source", "Twitter for (.*?)<") %>% View
+    filter(source %in% c("iPhone", "Android"))
+```
+
+
+# Tokenization
+```{r}
+library(tidytext)
+tweet_words <- tweets %>%
+    filter(!str_detect(text, '^"')) %>%
+    mutate(text = str_replace_all(text, "https://t.co/[A-Za-z\\d]+|&amp;", "")) %>%
+    # unnest_tokens(word, text) %>%
+    unnest_tokens(word, text, token = "regex", pattern = "[^A-Za-z\\d#@']") %>%
+    filter(!word %in% stop_words$word,
+           str_detect(word, "[a-z]"))
+```
+
+
+# Sentiment Analysis
+```
+library(tidytext)
+nrc <- sentiments %>%
+    filter(lexicon == "nrc") %>%
+    dplyr::select(word, sentiment)
+nrc
+```
+
+```
+library(textdata)
+sentiments
+get_sentiments("afinn") # negative to positive scale from -3~3
+get_sentiments("bing") # only negative/positive label
+table((get_sentiments("loughran")$sentiment))
+```
+
+
+```
+sources <- tweet_words %>%
+    group_by(source) %>%
+    mutate(total_words = n()) %>%
+    ungroup() %>%
+    distinct(id, source, total_words)
+
+by_source_sentiment <- tweet_words %>%
+    inner_join(nrc, by = "word") %>%
+    count(sentiment, id) %>%
+    ungroup() %>%
+    complete(sentiment, id, fill = list(n = 0)) %>%
+    inner_join(sources) %>%
+    group_by(source, sentiment, total_words) %>%
+    summarize(words = sum(n)) %>%
+    ungroup()
+
+head(by_source_sentiment)
+```
+
+```
+joined <- tweet_words %>%
+    inner_join(nrc, by = "word")
+
+sentiment_joined1 <- tweet_words %>%
+    inner_join(nrc, by = "word") %>%
+    count(sentiment, id) %>%
+    ungroup()
+
+sentiment_joined2 <- tweet_words %>%
+    inner_join(nrc, by = "word") %>%
+    count(sentiment, id) %>%
+    ungroup() %>%
+    complete(sentiment, id, fill = list(n = 0))
+
+test <- tweet_words %>%
+    group_by(source) %>%
+    mutate(total_words = n()) %>%
+    ungroup()
+
+join_source <- tweet_words %>%
+    inner_join(nrc, by = "word") %>%
+    count(sentiment, id) %>%
+    ungroup() %>%
+    complete(sentiment, id, fill = list(n = 0)) %>%
+    inner_join(sources)
+
+
+```
+
+
+
+```
+df <- tibble(
+    group = c(1:2, 1),
+    item_id = c(1:2, 2),
+    item_name = c("a", "b", "b"),
+    value1 = 1:3,
+    value2 = 4:6
+)
+df
+df %>% complete(group, nesting(item_id, item_name))
+```
+
+
+```
+library(broom)
+
+sentiment_differences <- by_source_sentiment %>%
+    group_by(sentiment) %>%
+    do(tidy(poisson.test(.$words, .$total_words)))
+
+sentiment_differences
+```
+```
+
+df3 <- by_source_sentiment %>%
+    filter(sentiment == "anger") %>%
+    mutate(words = as.double(words))
+
+poisson.test(x= df3$words, T= df3$total_words)
+```
+
+
+
+```
+library(scales)
+
+sentiment_differences %>%
+    ungroup() %>%
+    mutate(sentiment = reorder(sentiment, estimate)) %>%
+    mutate_at(c("estimate", "conf.low", "conf.high"), funs(.-1)) %>%
+    # mutate_each(funs(. - 1), estimate, conf.low, conf.high) %>%
+    ggplot(aes(estimate, sentiment)) +
+    geom_point() +
+    geom_errorbarh(aes(xmin = conf.low, xmax = conf.high)) +
+    scale_x_continuous(labels = percent_format()) +
+    labs(x = "% increase in Android relative to iPhone",
+         y = "Sentiment")
+```
+```
+android_iphone_ratios %>%
+    inner_join(nrc, by = "word") %>%
+    filter(!sentiment %in% c("positive", "negative")) %>%
+    mutate(sentiment = reorder(sentiment, -logratio),
+           word = reorder(word, -logratio)) %>%
+    group_by(sentiment) %>%
+    top_n(10, abs(logratio)) %>%
+    ungroup() %>%
+    ggplot(aes(word, logratio, fill = logratio < 0)) +
+    facet_wrap(~ sentiment, scales = "free", nrow = 2) +
+    geom_col() +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+    labs(x = "", y = "Android / iPhone log ratio") +
+    scale_fill_manual(name = "", labels = c("Android", "iPhone"),
+                      values = c("red", "lightblue"))
+```
+
+

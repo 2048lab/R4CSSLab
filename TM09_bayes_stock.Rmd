@@ -1,0 +1,99 @@
+---
+title: "R Notebook"
+output: html_notebook
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r}
+library(tidyverse)
+library(tidytext)
+library(stringr)
+
+set.seed(1234)
+theme_set(theme_minimal())
+```
+## Loading data
+```{r}
+load("data/stock_news.RData")
+stock_news %>% names
+```
+## Loading data
+```{r}
+load("data/stock_news.RData")
+stock_news %>% names
+```
+
+
+```{r jeibaR and stop word}
+library(jiebaR)
+segment_not <- c("鴻海" ,  "永豐金", "中信金", "台積電", "聯發科" ,"兆豐金", "台指期","郭台銘","張忠謀","鉅亨網")
+cutter <- worker()
+new_user_word(cutter,segment_not)
+stopWords <- readRDS("data/stopWords.rds")
+```
+
+
+
+
+## Stopwords
+```{r}
+
+unnested.df <- stock_news %>%
+    select(doc_id = newsId, text = content, status = status_p) %>%
+    mutate(word = purrr::map(text, function(x)segment(x, cutter))) %>%
+    unnest(word) %>%
+    filter(!is.na(word)) %>%
+    anti_join(stopWords) %>%
+    filter(!str_detect(word, "[a-zA-Z0-9]+")) %>% 
+    filter(nchar(word) > 1) %>%
+    group_by(word) %>%
+    filter(n() > 10) %>%
+    ungroup()
+```
+
+## DTM
+```{r}
+(stock_dtm <- unnested.df %>%
+   # get count of each token in each document
+   count(doc_id, word) %>%
+   # create a document-term matrix with all features and tf weighting
+   cast_dtm(document = doc_id, term = word, value = n))
+  # cast_dtm(document = ID, term = word, value = n,
+  #          weighting = tm::weightTfIdf)
+
+
+stock_dtm[40:50, 10:15]
+
+```
+
+
+```{r}
+index <- sample(2,nrow(stock_dtm),replace = TRUE,prob=c(0.8,0.2))
+traindata <- stock_dtm[index==1,]
+testdata <- stock_dtm[index==2,]
+train_news <- stock_news[index==1,]
+test_news <- stock_news[index==2,]
+# length(make.names(stock_news$status_p))
+convert_count <- function(x) {
+  y <- ifelse(x > 0, TRUE,FALSE)
+  factor(y)
+}
+```
+
+
+```{r}
+trainNB <- apply(traindata, 2, convert_count)
+testNB <- apply(testdata, 2, convert_count)
+```
+
+```{r}
+library(e1071)
+system.time( classifier <- naiveBayes(trainNB, train_news$status_p, laplace = 1) )
+pred <- predict(classifier, newdata = testNB)
+```
+
+```{r}
+table("Predictions"= pred,  "Actual" = test_news$status_p)
+```
+
